@@ -1,6 +1,10 @@
 import asyncio
 import json
 import logging
+import re
+import os
+import urllib.request
+
 
 from config import settings
 from models import Deal
@@ -17,6 +21,45 @@ from telegram_client import (
 )
 
 log = logging.getLogger("deals-bot")
+
+async def send_cloud_review(deal, fp, report):
+    api_url = os.getenv("CLOUD_API_URL", "").rstrip("/")
+    api_key = os.getenv("CLOUD_API_KEY", "")
+
+    if not api_url or not api_key:
+        raise RuntimeError("CLOUD_API_URL or CLOUD_API_KEY is missing")
+
+    payload = {
+        "fingerprint": fp,
+        "store": getattr(deal, "store", "Unknown"),
+        "title": deal.title,
+        "current_price": float(deal.current_price),
+        "old_price": float(deal.old_price) if deal.old_price else None,
+        "discount_percent": float(deal.discount_percent or 0),
+        "url": deal.url,
+        "verified": True,
+        "comparison_report": re.sub(r"<[^>]+>", "", comparison_html(report)),
+    }
+
+    def _post():
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            api_url + "/api/deals",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "EgyptDealsBot/1.0",
+                "x-api-key": api_key,
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    return await asyncio.to_thread(_post)
+
 
 def qualifies(deal):
     return deal.discount_percent >= settings.min_discount_percent and deal.saving >= settings.min_saving_egp
@@ -61,13 +104,23 @@ async def scan_once():
             log.info("UNVERIFIED rejected: %s | %s", deal.title, report.reason)
             continue
 
-        save_pending(fp, deal)
-        result = await send_admin_review(
-            settings.telegram_bot_token, settings.admin_chat_id,
-            deal, fp[:16], comparison_html(report)
-        )
-        set_admin_message_id(fp, int(result["message_id"]))
-        sent += 1
+        try:
+            result = await send_cloud_review(deal, fp, report)
+            cloud_result = (result.get("results") or [{}])[0]
+
+            if cloud_result.get("ok"):
+                log.info("CLOUD review sent: %s", deal.title)
+                sent += 1
+            else:
+                log.warning(
+                    "CLOUD rejected: %s | %s",
+                    deal.title,
+                    cloud_result
+                )
+
+        except Exception as exc:
+            log.exception("Cloud API failed for %s: %s", deal.title, exc)
+
         await asyncio.sleep(1)
 
     log.info("Cycle complete: %d VERIFIED offers sent for review", sent)

@@ -1,0 +1,67 @@
+name: Egypt Deals Scanner
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "*/10 * * * *"
+
+concurrency:
+  group: egypt-deals-scanner
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+
+    env:
+      CLOUD_API_URL: https://egypt-deals-api.masoudalnabawi.workers.dev
+      CLOUD_API_KEY: ${{ secrets.CLOUD_API_KEY }}
+
+      ENABLED_STORES: amazon,jumia,2b
+
+      MIN_DISCOUNT_PERCENT: "20"
+      MIN_SAVING_EGP: "200"
+
+      MAX_POSTS_PER_CYCLE: "2"
+      MAX_VERIFY_CANDIDATES: "10"
+
+      STRICT_VERIFICATION: "true"
+      MIN_MATCH_CONFIDENCE: "90"
+      MIN_MARKET_ADVANTAGE_PERCENT: "0"
+
+      REQUEST_TIMEOUT_SECONDS: "25"
+      USER_AGENT: Mozilla/5.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Initialize database
+        run: |
+          python - <<'PY'
+          from db import init_db
+          init_db()
+          print("DB_INIT_OK")
+          PY
+
+      - name: Run scanner
+        run: |
+          python - <<'PY'
+          import asyncio
+          from engine import scan_once
+
+          result = asyncio.run(scan_once())
+          print("VERIFIED_SENT =", result)
+          PY
