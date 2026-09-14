@@ -1,0 +1,85 @@
+name: Test Noon Egypt
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-noon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Noon HTTP access
+        run: |
+          python - <<'PY'
+          import httpx
+
+          url = "https://www.noon.com/egypt-en/"
+          headers = {"User-Agent": "Mozilla/5.0"}
+
+          r = httpx.get(
+              url,
+              headers=headers,
+              timeout=30,
+              follow_redirects=True
+          )
+
+          print("STATUS =", r.status_code)
+          print("BYTES =", len(r.content))
+
+          if r.status_code != 200:
+              raise SystemExit("NOON_HTTP_FAILED")
+          PY
+
+      - name: Noon deals parser
+        run: |
+          python - <<'PY'
+          import asyncio
+          from stores.noon import NoonConnector
+
+          async def main():
+              c = NoonConnector(30, "Mozilla/5.0")
+              deals = await c.fetch_deals()
+
+              print("NOON_DEALS =", len(deals))
+
+              for d in deals[:3]:
+                  print(d.title, d.current_price, d.url)
+
+              if not deals:
+                  raise SystemExit("NOON_DEALS_ZERO")
+
+          asyncio.run(main())
+          PY
+
+      - name: Noon search parser
+        run: |
+          python - <<'PY'
+          import asyncio
+          from stores.noon import NoonConnector
+
+          async def main():
+              c = NoonConnector(30, "Mozilla/5.0")
+              deals = await c.search_products("samsung")
+
+              print("NOON_SEARCH =", len(deals))
+
+              for d in deals[:3]:
+                  print(d.title, d.current_price, d.url)
+
+              if not deals:
+                  raise SystemExit("NOON_SEARCH_ZERO")
+
+          asyncio.run(main())
+          PY
