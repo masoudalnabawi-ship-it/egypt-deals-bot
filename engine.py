@@ -61,8 +61,25 @@ async def send_cloud_review(deal, fp, report):
     return await asyncio.to_thread(_post)
 
 
+STORE_MIN_DISCOUNT = {
+    "amazon": 10,
+    "jumia": 20,
+    "2b": 15,
+    "btech": 15,
+    "raya": 15,
+    "dream2000": 15,
+}
+
 def qualifies(deal):
-    return deal.discount_percent >= settings.min_discount_percent and deal.saving >= settings.min_saving_egp
+    min_discount = STORE_MIN_DISCOUNT.get(
+        deal.store.lower(),
+        settings.min_discount_percent
+    )
+
+    return (
+        deal.discount_percent >= min_discount
+        and deal.saving >= settings.min_saving_egp
+    )
 
 
 async def sync_cloud_observations(deals):
@@ -170,9 +187,30 @@ async def scan_once():
         if qualifies(d):
             by_store.setdefault(d.store.lower(), []).append(d)
 
+    # Products that appear under the same normalized product key
+    # in multiple stores are much easier and safer to verify.
+    key_stores = {}
+
+    for d in market:
+        key_stores.setdefault(
+            product_key(d),
+            set()
+        ).add(d.store.lower())
+
+    def verification_priority(d):
+        exact_cross_store = (
+            len(key_stores.get(product_key(d), set())) >= 2
+        )
+
+        return (
+            1 if exact_cross_store else 0,
+            d.discount_percent,
+            d.saving,
+        )
+
     for store_deals in by_store.values():
         store_deals.sort(
-            key=lambda d: (d.discount_percent, d.saving),
+            key=verification_priority,
             reverse=True
         )
 
