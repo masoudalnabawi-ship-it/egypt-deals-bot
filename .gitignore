@@ -1,0 +1,11 @@
+.env
+.venv/
+deals.db
+deals.db-*
+*.sqlite*
+__pycache__/
+*.pyc
+*.bak
+backup*/
+backup_before_*/
+.amazon_scan_state.json
