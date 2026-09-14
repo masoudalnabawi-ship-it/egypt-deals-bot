@@ -202,8 +202,22 @@ async def scan_once():
             len(key_stores.get(product_key(d), set())) >= 2
         )
 
+        # Prefer products with identifiable model numbers.
+        # These are much safer to compare across stores than generic items.
+        title = str(d.title).upper()
+
+        has_model = bool(
+            re.search(
+                r"\b(?=[A-Z0-9._/-]*[A-Z])"
+                r"(?=[A-Z0-9._/-]*\d)"
+                r"[A-Z0-9][A-Z0-9._/-]{2,}\b",
+                title
+            )
+        )
+
         return (
             1 if exact_cross_store else 0,
+            1 if has_model else 0,
             d.discount_percent,
             d.saving,
         )

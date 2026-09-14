@@ -13,7 +13,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     env:
       CLOUD_API_URL: https://egypt-deals-api.masoudalnabawi.workers.dev
@@ -24,8 +24,8 @@ jobs:
       MIN_DISCOUNT_PERCENT: "20"
       MIN_SAVING_EGP: "200"
 
-      MAX_POSTS_PER_CYCLE: "6"
-      MAX_VERIFY_CANDIDATES: "24"
+      MAX_POSTS_PER_CYCLE: "8"
+      MAX_VERIFY_CANDIDATES: "30"
 
       STRICT_VERIFICATION: "true"
       MIN_MATCH_CONFIDENCE: "90"
