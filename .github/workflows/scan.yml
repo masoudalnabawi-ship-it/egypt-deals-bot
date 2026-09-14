@@ -13,19 +13,19 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 12
 
     env:
       CLOUD_API_URL: https://egypt-deals-api.masoudalnabawi.workers.dev
       CLOUD_API_KEY: ${{ secrets.CLOUD_API_KEY }}
 
-      ENABLED_STORES: amazon,jumia,2b
+      ENABLED_STORES: amazon,jumia,2b,btech,raya,dream2000
 
       MIN_DISCOUNT_PERCENT: "20"
       MIN_SAVING_EGP: "200"
 
-      MAX_POSTS_PER_CYCLE: "2"
-      MAX_VERIFY_CANDIDATES: "10"
+      MAX_POSTS_PER_CYCLE: "6"
+      MAX_VERIFY_CANDIDATES: "24"
 
       STRICT_VERIFICATION: "true"
       MIN_MATCH_CONFIDENCE: "90"

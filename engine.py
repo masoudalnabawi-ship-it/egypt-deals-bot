@@ -149,8 +149,16 @@ async def scan_once():
         save_seen(deal)
         save_market_observation(product_key(deal), deal)
 
+    # Persist useful price history without uploading thousands
+    # of weak/no-discount catalogue variants every cycle.
+    history_market = [
+        d for d in market
+        if d.old_price is not None
+        and d.discount_percent >= 5
+    ]
+
     try:
-        await sync_cloud_observations(market)
+        await sync_cloud_observations(history_market)
     except Exception as exc:
         log.exception("Cloud history sync failed: %s", exc)
 
