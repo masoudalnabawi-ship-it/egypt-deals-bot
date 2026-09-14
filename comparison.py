@@ -1,5 +1,9 @@
 import asyncio
 import html
+import json
+import os
+import urllib.parse
+import urllib.request
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -146,6 +150,41 @@ class ComparisonReport:
     historical_average: float | None = None
     reason: str = ""
 
+
+async def cloud_history_stats_for_key(key: str):
+    api_url = os.getenv("CLOUD_API_URL", "").rstrip("/")
+    api_key = os.getenv("CLOUD_API_KEY", "")
+
+    if not api_url or not api_key:
+        return history_stats_for_key(key)
+
+    def _get():
+        query = urllib.parse.urlencode({"product_key": key})
+
+        req = urllib.request.Request(
+            api_url + "/api/history?" + query,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "EgyptDealsBot/1.0",
+                "x-api-key": api_key,
+            }
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+        return {
+            "count": int(data.get("count") or 0),
+            "min_price": data.get("min_price"),
+            "avg_price": data.get("avg_price"),
+        }
+
+    try:
+        return await asyncio.to_thread(_get)
+    except Exception:
+        return history_stats_for_key(key)
+
+
 class DealVerifier:
     def __init__(self, current_market=None):
         self.current_market = current_market or []
@@ -205,7 +244,7 @@ class DealVerifier:
         if best:
             advantage = round(((best - deal.current_price) / best) * 100, 1)
 
-        hist = history_stats_for_key(product_key(deal))
+        hist = await cloud_history_stats_for_key(product_key(deal))
         history_ok = (
             hist["count"] >= 3
             and hist["min_price"] is not None

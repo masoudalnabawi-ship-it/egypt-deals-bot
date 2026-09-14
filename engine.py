@@ -64,6 +64,70 @@ async def send_cloud_review(deal, fp, report):
 def qualifies(deal):
     return deal.discount_percent >= settings.min_discount_percent and deal.saving >= settings.min_saving_egp
 
+
+async def sync_cloud_observations(deals):
+    api_url = os.getenv("CLOUD_API_URL", "").rstrip("/")
+    api_key = os.getenv("CLOUD_API_KEY", "")
+
+    if not api_url or not api_key:
+        return
+
+    observations = []
+
+    for deal in deals:
+        observations.append({
+            "product_key": product_key(deal),
+            "store": deal.store,
+            "title": deal.title,
+            "current_price": float(deal.current_price),
+            "old_price": (
+                float(deal.old_price)
+                if deal.old_price is not None
+                else None
+            ),
+            "url": deal.url,
+        })
+
+    def _post(chunk):
+        payload = json.dumps(
+            {"observations": chunk},
+            ensure_ascii=False
+        ).encode("utf-8")
+
+        req = urllib.request.Request(
+            api_url + "/api/observations",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "EgyptDealsBot/1.0",
+                "x-api-key": api_key,
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=40) as response:
+            return json.loads(
+                response.read().decode("utf-8")
+            )
+
+    inserted = 0
+
+    for i in range(0, len(observations), 50):
+        result = await asyncio.to_thread(
+            _post,
+            observations[i:i + 50]
+        )
+
+        inserted += int(result.get("inserted", 0))
+
+    log.info(
+        "Cloud history sync: %d observations / %d inserted",
+        len(observations),
+        inserted
+    )
+
+
 async def run_store(name):
     cls = CONNECTORS.get(name)
     if not cls:
@@ -85,9 +149,47 @@ async def scan_once():
         save_seen(deal)
         save_market_observation(product_key(deal), deal)
 
-    candidates = [d for d in market if qualifies(d)]
-    candidates.sort(key=lambda d: (d.discount_percent, d.saving), reverse=True)
-    candidates = candidates[:settings.max_verify_candidates]
+    try:
+        await sync_cloud_observations(market)
+    except Exception as exc:
+        log.exception("Cloud history sync failed: %s", exc)
+
+    # Give every store a fair chance instead of allowing one store
+    # (usually Jumia) to occupy all verification slots.
+    by_store = {}
+
+    for d in market:
+        if qualifies(d):
+            by_store.setdefault(d.store.lower(), []).append(d)
+
+    for store_deals in by_store.values():
+        store_deals.sort(
+            key=lambda d: (d.discount_percent, d.saving),
+            reverse=True
+        )
+
+    candidates = []
+    store_order = list(settings.enabled_stores)
+
+    # Round-robin between stores
+    index = 0
+    while len(candidates) < settings.max_verify_candidates:
+        added = False
+
+        for store in store_order:
+            deals = by_store.get(store, [])
+
+            if index < len(deals):
+                candidates.append(deals[index])
+                added = True
+
+                if len(candidates) >= settings.max_verify_candidates:
+                    break
+
+        if not added:
+            break
+
+        index += 1
 
     verifier = DealVerifier(market)
     sent = 0
