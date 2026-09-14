@@ -1,37 +1,105 @@
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote_plus
+
 from models import Deal
 from stores.base import StoreConnector, parse_price
 
+
 class RayaConnector(StoreConnector):
     name = "raya"
+
+    BASE = "https://www.rayashop.com"
     URL = "https://www.rayashop.com/ar"
 
-    async def fetch_deals(self) -> list[Deal]:
-        soup = await self.get_soup(self.URL)
+    def _parse_cards(self, soup, only_discounts=False):
         deals = []
-        cards = soup.select(
-            ".product-item, [class*='product-card'], "
-            "[class*='ProductCard'], li[class*='product']"
-        )
+        seen = set()
+
+        cards = soup.select("div.ProductCard__Main")
+
         for card in cards:
-            link = card.select_one("a[href]")
-            title_el = card.select_one(
-                ".product-item-link, h3, h2, [class*='title'], [class*='name']"
+            title_el = card.select_one("p.name")
+            if not title_el:
+                continue
+
+            link = None
+            for a in card.select("a[href]"):
+                href = a.get("href", "")
+                if href.startswith("/ar/"):
+                    link = href
+                    break
+
+            if not link:
+                continue
+
+            current_el = card.select_one(
+                "span.currency.text-lg"
             )
-            price_nodes = card.select(".price, [class*='price']")
-            if not (link and title_el and price_nodes):
+
+            old_el = card.select_one(
+                "span.currency.line-through"
+            )
+
+            if not current_el:
                 continue
-            vals = [parse_price(x.get_text(" ", strip=True)) for x in price_nodes]
-            vals = [x for x in vals if x and x > 10]
-            if not vals:
+
+            current = parse_price(
+                current_el.get_text(" ", strip=True)
+            )
+
+            old = None
+
+            if old_el:
+                old = parse_price(
+                    old_el.get_text(" ", strip=True)
+                )
+
+            if not current:
                 continue
-            current = min(vals)
-            old = max(vals) if len(vals) > 1 and max(vals) > current else None
-            deals.append(Deal(
+
+            if old is not None and old <= current:
+                old = None
+
+            if only_discounts and not old:
+                continue
+
+            deal = Deal(
                 store=self.name,
                 title=title_el.get_text(" ", strip=True),
                 current_price=current,
                 old_price=old,
-                url=urljoin(self.URL, link.get("href")),
-            ))
+                url=urljoin(self.BASE, link),
+            )
+
+            key = (
+                deal.title.lower().strip(),
+                deal.current_price,
+                deal.url
+            )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            deals.append(deal)
+
         return deals
+
+    async def fetch_deals(self):
+        soup = await self.get_soup(self.URL)
+        return self._parse_cards(
+            soup,
+            only_discounts=True
+        )
+
+    async def search_products(self, query: str):
+        url = (
+            "https://www.rayashop.com/search?q="
+            + quote_plus(query)
+        )
+
+        soup = await self.get_soup(url)
+
+        return self._parse_cards(
+            soup,
+            only_discounts=False
+        )[:30]
