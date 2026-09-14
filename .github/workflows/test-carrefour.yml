@@ -1,0 +1,73 @@
+name: Test Carrefour Browser
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-carrefour:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Test Carrefour
+        run: |
+          python - <<'PY'
+          import asyncio
+          from playwright.async_api import async_playwright
+
+          URL = "https://www.carrefouregypt.com/mafegy/en/c/15388"
+
+          async def main():
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch(headless=True)
+
+                  context = await browser.new_context(
+                      locale="en-EG",
+                      user_agent=(
+                          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/140.0.0.0 Safari/537.36"
+                      )
+                  )
+
+                  page = await context.new_page()
+
+                  response = await page.goto(
+                      URL,
+                      wait_until="domcontentloaded",
+                      timeout=60000
+                  )
+
+                  await page.wait_for_timeout(10000)
+
+                  body = await page.locator("body").inner_text()
+                  html = await page.content()
+
+                  print("STATUS =", response.status if response else None)
+                  print("TITLE =", await page.title())
+                  print("HTML_BYTES =", len(html.encode()))
+                  print("BODY_LENGTH =", len(body))
+                  print("EGP_COUNT =", body.upper().count("EGP"))
+                  print("OFF_COUNT =", body.upper().count("OFF"))
+                  print("BODY_SAMPLE =", body[:1500].replace("\n", " "))
+
+                  if len(body) < 500:
+                      raise SystemExit("CARREFOUR_BROWSER_BLOCKED")
+
+                  await browser.close()
+
+          asyncio.run(main())
+          PY
