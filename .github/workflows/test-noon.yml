@@ -1,4 +1,4 @@
-name: Test Noon Egypt
+name: Test Noon Browser
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   test-noon:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -17,69 +17,60 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Noon HTTP access
+      - name: Install Playwright
         run: |
-          python - <<'PY'
-          import httpx
+          pip install playwright
+          playwright install --with-deps chromium
 
-          url = "https://www.noon.com/egypt-en/"
-          headers = {"User-Agent": "Mozilla/5.0"}
-
-          r = httpx.get(
-              url,
-              headers=headers,
-              timeout=30,
-              follow_redirects=True
-          )
-
-          print("STATUS =", r.status_code)
-          print("BYTES =", len(r.content))
-
-          if r.status_code != 200:
-              raise SystemExit("NOON_HTTP_FAILED")
-          PY
-
-      - name: Noon deals parser
+      - name: Test Noon in Chromium
         run: |
           python - <<'PY'
           import asyncio
-          from stores.noon import NoonConnector
+          from playwright.async_api import async_playwright
 
           async def main():
-              c = NoonConnector(30, "Mozilla/5.0")
-              deals = await c.fetch_deals()
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch(headless=True)
 
-              print("NOON_DEALS =", len(deals))
+                  context = await browser.new_context(
+                      locale="en-EG",
+                      user_agent=(
+                          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/140.0.0.0 Safari/537.36"
+                      )
+                  )
 
-              for d in deals[:3]:
-                  print(d.title, d.current_price, d.url)
+                  page = await context.new_page()
 
-              if not deals:
-                  raise SystemExit("NOON_DEALS_ZERO")
+                  response = await page.goto(
+                      "https://www.noon.com/egypt-en/",
+                      wait_until="domcontentloaded",
+                      timeout=60000
+                  )
 
-          asyncio.run(main())
-          PY
+                  await page.wait_for_timeout(8000)
 
-      - name: Noon search parser
-        run: |
-          python - <<'PY'
-          import asyncio
-          from stores.noon import NoonConnector
+                  print("STATUS =", response.status if response else None)
+                  print("TITLE =", await page.title())
+                  print("URL =", page.url)
 
-          async def main():
-              c = NoonConnector(30, "Mozilla/5.0")
-              deals = await c.search_products("samsung")
+                  html = await page.content()
+                  print("HTML_BYTES =", len(html.encode("utf-8")))
 
-              print("NOON_SEARCH =", len(deals))
+                  product_links = await page.locator(
+                      'a[href*="/egypt-en/"]'
+                  ).count()
 
-              for d in deals[:3]:
-                  print(d.title, d.current_price, d.url)
+                  print("LINKS =", product_links)
 
-              if not deals:
-                  raise SystemExit("NOON_SEARCH_ZERO")
+                  text = (await page.locator("body").inner_text())[:1000]
+                  print("BODY_SAMPLE =", text.replace("\n", " ")[:1000])
+
+                  if len(html) < 10000:
+                      raise SystemExit("NOON_BROWSER_PAGE_TOO_SMALL")
+
+                  await browser.close()
 
           asyncio.run(main())
           PY
