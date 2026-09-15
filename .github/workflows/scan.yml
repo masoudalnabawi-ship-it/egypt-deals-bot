@@ -12,14 +12,14 @@ concurrency:
 
 jobs:
   scan:
-    runs-on: [self-hosted, egypt-scan]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     env:
       CLOUD_API_URL: https://egypt-deals-api.masoudalnabawi.workers.dev
       CLOUD_API_KEY: ${{ secrets.CLOUD_API_KEY }}
 
-      ENABLED_STORES: amazon,jumia,2b,btech,raya,dream2000
+      ENABLED_STORES: amazon,btech,raya,dream2000
 
       MIN_DISCOUNT_PERCENT: "20"
       MIN_SAVING_EGP: "200"
