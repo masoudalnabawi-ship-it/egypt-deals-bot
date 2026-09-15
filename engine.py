@@ -62,7 +62,7 @@ async def send_cloud_review(deal, fp, report):
 
 
 STORE_MIN_DISCOUNT = {
-    "amazon": 10,
+    "amazon": 5,
     "jumia": 20,
     "2b": 15,
     "btech": 15,
